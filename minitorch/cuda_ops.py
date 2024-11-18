@@ -385,20 +385,29 @@ def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
         size (int): size of the square
 
     """
+    # Create shared memory to store the matrices a and b.
     BLOCK_DIM = 32
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
+    # Get the local position for the thread.
     local_i, local_j = cuda.threadIdx.x, cuda.threadIdx.y
 
+    # Check if the local position is within the size.
     if local_i < size and local_j < size:
+        # Copy the data from global memory to shared memory.
         a_shared[local_i, local_j] = a[local_i * size + local_j]
         b_shared[local_i, local_j] = b[local_i * size + local_j]
+
+        # Wait for all threads to finish copying.
         cuda.syncthreads()
 
+        # Compute the dot product for the local position.
         value = 0.0
         for k in range(size):
             value += a_shared[local_i, k] * b_shared[k, local_j]
+
+        # Write the result to the output.
         out[local_i * size + local_j] = value
 
 
@@ -469,12 +478,17 @@ def _tensor_matrix_multiply(
     #    b) Copy into shared memory for b matrix
     #    c) Compute the dot produce for position c[i, j]
 
-    M = out_shape[-2]
-    N = out_shape[-1]
-    K = a_shape[-1]
+    # Get the dimensions of the matrices involved.
+    M = out_shape[-2]  # Rows in the ouput matrix
+    N = out_shape[-1]  # Columns in the output matrix
+    K = a_shape[-1]  # Shared dimension
 
+    # Initialize the accumulator outside the loop to keep result of the dot product.
     acc = 0.0
+
+    # Loop over the shared dimension by block dim.
     for k in range(0, K, BLOCK_DIM):
+        # Load a submatrix of a and b into shared memory if it is within the bounds.
         if i < M and k + pj < K:
             a_shared[pi, pj] = a_storage[
                 batch * a_batch_stride + i * a_strides[-2] + (k + pj) * a_strides[-1]
@@ -483,13 +497,15 @@ def _tensor_matrix_multiply(
             b_shared[pi, pj] = b_storage[
                 batch * b_batch_stride + (k + pi) * b_strides[-2] + j * b_strides[-1]
             ]
+
+        # Wait for all threads to finish copying.
         cuda.syncthreads()
 
+        # Compute the dot product for the current submatrix.
         for local_k in range(min(BLOCK_DIM, K - k)):
             acc += a_shared[pi, local_k] * b_shared[local_k, pj]
 
-        cuda.syncthreads()
-
+    # Write the acculmulated value to the output.
     if i < M and j < N:
         out[batch * out_strides[0] + i * out_strides[-2] + j * out_strides[-1]] = acc
 
