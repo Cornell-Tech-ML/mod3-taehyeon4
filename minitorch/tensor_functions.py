@@ -132,14 +132,15 @@ class Sigmoid(Function):
     @staticmethod
     def forward(ctx: Context, t1: Tensor) -> Tensor:
         """Elementwise sigmoid forward."""
-        ctx.save_for_backward(t1)
-        return t1.f.sigmoid_map(t1)
+        out = t1.f.sigmoid_map(t1)
+        ctx.save_for_backward(out)
+        return out
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tensor:
         """Elementwise sigmoid backward."""
-        (t1,) = ctx.saved_values
-        return grad_output.f.sigmoid_back_zip(t1, grad_output)
+        (sigma,) = ctx.saved_values
+        return sigma * (-sigma + 1.0) * grad_output
 
 
 class ReLU(Function):
@@ -174,14 +175,15 @@ class Exp(Function):
     @staticmethod
     def forward(ctx: Context, t1: Tensor) -> Tensor:
         """Elementwise exp forward."""
-        ctx.save_for_backward(t1)
-        return t1.f.exp_map(t1)
+        out = t1.f.exp_map(t1)
+        ctx.save_for_backward(out)
+        return out
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tensor:
         """Elementwise exp backward."""
-        (t1,) = ctx.saved_values
-        return grad_output.f.exp_back_zip(t1, grad_output)
+        (out,) = ctx.saved_values
+        return grad_output.f.mul_zip(grad_output, out)
 
 
 class Sum(Function):
