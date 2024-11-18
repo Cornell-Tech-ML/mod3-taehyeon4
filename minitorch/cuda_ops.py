@@ -380,8 +380,20 @@ def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
 
     """
     BLOCK_DIM = 32
-    # TODO: Implement for Task 3.3.
-    raise NotImplementedError("Need to implement for Task 3.3")
+    a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+    b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
+
+    local_i, local_j = cuda.threadIdx.x, cuda.threadIdx.y
+
+    if local_i < size and local_j < size:
+        a_shared[local_i, local_j] = a[local_i * size + local_j]
+        b_shared[local_i, local_j] = b[local_i * size + local_j]
+        cuda.syncthreads()
+
+        value = 0.0
+        for k in range(size):
+            value += a_shared[local_i, k] * b_shared[k, local_j]
+        out[local_i * size + local_j] = value
 
 
 jit_mm_practice = jit(_mm_practice)
@@ -449,8 +461,30 @@ def _tensor_matrix_multiply(
     #    a) Copy into shared memory for a matrix.
     #    b) Copy into shared memory for b matrix
     #    c) Compute the dot produce for position c[i, j]
-    # TODO: Implement for Task 3.4.
-    raise NotImplementedError("Need to implement for Task 3.4")
+
+    M = out_shape[-2]
+    N = out_shape[-1]
+    K = a_shape[-1]
+
+    acc = 0.0
+    for k in range(0, K, BLOCK_DIM):
+        if i < M and k + pj < K:
+            a_shared[pi, pj] = a_storage[
+                batch * a_batch_stride + i * a_strides[-2] + (k + pj) * a_strides[-1]
+            ]
+        if j < N and k + pi < K:
+            b_shared[pi, pj] = b_storage[
+                batch * b_batch_stride + (k + pi) * b_strides[-2] + j * b_strides[-1]
+            ]
+        cuda.syncthreads()
+
+        for local_k in range(min(BLOCK_DIM, K - k)):
+            acc += a_shared[pi, local_k] * b_shared[local_k, pj]
+
+        cuda.syncthreads()
+
+    if i < M and j < N:
+        out[batch * out_strides[0] + i * out_strides[-2] + j * out_strides[-1]] = acc
 
 
 tensor_matrix_multiply = jit(_tensor_matrix_multiply)
